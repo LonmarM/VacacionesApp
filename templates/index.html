@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Gestión de Vacaciones | Cargar Archivo</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f3f6fa;
+        }
+        .card {
+            border-radius: 16px;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.1);
+        }
+        .brand {
+            font-size: 26px;
+            font-weight: 700;
+            color: #0d6efd;
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-light bg-white shadow-sm px-4 py-3">
+    <span class="brand">Gestión Corporativa de Vacaciones</span>
+</nav>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-7">
+
+            <div class="card p-4">
+                <h3 class="text-center mb-4">Cargar Archivo de Empleados</h3>
+
+                <form action="/procesar" method="POST" enctype="multipart/form-data">
+
+                    <!-- ARCHIVO -->
+                    <label class="form-label fw-bold">Seleccione un archivo (CSV o Excel)</label>
+                    <input class="form-control form-control-lg" type="file" name="archivo" required>
+
+                    <!-- FECHA DE INICIO -->
+                    <label class="form-label fw-bold mt-4">Fecha desde la cual asignar vacaciones</label>
+                    <input type="date" name="fecha_inicio" class="form-control form-control-lg" required>
+
+                    <!-- FECHAS BLOQUEADAS -->
+                    <label class="form-label fw-bold mt-4">Fechas bloqueadas (separadas por coma). Rango con ':'</label>
+                    <input type="text" name="blocked_dates" 
+                           class="form-control form-control-lg"
+                           placeholder="2025-03-15,2025-04-01:2025-04-05">
+
+                    <!-- BOTÓN -->
+                    <button class="btn btn-primary w-100 mt-4 btn-lg">
+                        Procesar Información
+                    </button>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<footer class="text-center mt-5 text-muted">
+    © 2025 Sistema Corporativo de Gestión de Vacaciones
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Resultados de Vacaciones</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background: #f5f5f5;
+        }
+
+        header {
+            background: #1f2937;
+            color: white;
+            padding: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 24px auto;
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.12);
+        }
+        .table thead th {
+            background: #111827;
+            color: white;
+        }
+        .badge-area {
+            background: #0ea5a4;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 8px;
+        }
+        #calendar {
+            margin-top: 20px;
+        }
+    </style>
+
+    <!-- FULLCALENDAR -->
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+
+</head>
+<body>
+
+<header>Resultados de Vacaciones</header>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Resumen de días disponibles por empleado</h3>
+        <div>
+            <a href="/descargar_pdf" class="btn btn-outline-primary btn-sm">Descargar PDF</a>
+            <a href="/" class="btn btn-secondary btn-sm">Volver</a>
+        </div>
+    </div>
+
+    <!-- TABLA DE RESULTADOS -->
+    <div class="table-responsive">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Empleado</th>
+                <th>Área</th>
+                <th>Días trabajados</th>
+                <th>Días generados</th>
+                <th>Días tomados</th>
+                <th>Días disponibles</th>
+                <th>Inicio</th>
+                <th>Fin</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in resultados %}
+            <tr>
+                <td><strong>{{ r.nombre }}</strong></td>
+                <td><span class="badge-area">{{ r.area or 'General' }}</span></td>
+                <td>{{ r.dias_trabajados }}</td>
+                <td>{{ r.dias_generados }}</td>
+                <td>{{ r.dias_tomados }}</td>
+                <td>{{ r.dias_disponibles }}</td>
+                <td>{{ r.inicio_vacaciones if r.inicio_vacaciones else '-' }}</td>
+                <td>{{ r.fin_vacaciones if r.fin_vacaciones else '-' }}</td>
+                <td>
+                    {% if r.inicio_vacaciones %}
+                    <button class="btn btn-sm btn-primary" onclick="editarFecha('{{ r.nombre }}')">Editar</button>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <!-- CALENDARIO -->
+    <h3 class="mt-4">Calendario de Vacaciones</h3>
+    <div id="calendar"></div>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var calendarEl = document.getElementById('calendar');
+
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'es',
+        height: "auto",
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,listWeek'
+        },
+        events: {{ eventos|safe }}
+    });
+
+    calendar.render();
+});
+
+// Función para pedir nueva fecha y llamar al endpoint editar_fecha
+function editarFecha(nombre) {
+    let nueva = prompt("Ingrese la nueva fecha de inicio para " + nombre + " (YYYY-MM-DD):");
+    if (!nueva) return;
+    // opcional: puedes enviar blocked_dates también si tu vista lo necesita
+    const formData = new FormData();
+    formData.append("nombre", nombre);
+    formData.append("nueva_fecha", nueva);
+    fetch("/editar_fecha", {
+        method: "POST",
+        body: formData
+    }).then(resp => resp.json())
+      .then(data => {
+        if (!data.ok) {
+            alert("Error: " + (data.msg || "No se pudo editar"));
+            return;
+        }
+        // recargar para ver nuevos resultados
+        location.reload();
+      }).catch(err => {
+        alert("Error en la petición: " + err);
+    });
+}
+</script>
+
+</body>
+</html>
