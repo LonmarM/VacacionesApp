@@ -3,7 +3,7 @@ import json
 from datetime import date, datetime, timedelta
 import pandas as pd
 import holidays
-from flask import Flask, render_template, request, redirect, url_for, send_from_directory, session
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory, session, jsonify
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
@@ -31,6 +31,25 @@ ADMIN_PASSWORD = "admin1234"   # CAMBIAR
 # UTILIDADES
 # ------------------------------------------------------------------
 
+def iso_to_ddmmyyyy(iso_str):
+    if not iso_str:
+        return ""
+    try:
+        d = date.fromisoformat(iso_str)
+        return d.strftime("%d/%m/%Y")
+    except:
+        return iso_str
+
+def ddmmyyyy_to_date(s):
+    # acepta dd/mm/yyyy o yyyy-mm-dd
+    try:
+        return datetime.strptime(s, "%d/%m/%Y").date()
+    except:
+        try:
+            return date.fromisoformat(s)
+        except:
+            return None
+
 def obtener_pagadas_hasta(df, index):
     current_name = df.loc[index, "empleado"]
 
@@ -55,6 +74,11 @@ def calcular_fecha_proyectada_15_dias(pagadas_hasta, dias_sln_previos):
 
 
 def load_employees():
+    # Si no existe el excel, devolvemos un ejemplo vacío para evitar crash.
+    if not os.path.exists(EMPLOYEE_FILE):
+        # retornar diccionario vacío
+        return {}
+
     df = pd.read_excel(EMPLOYEE_FILE, header=0, skiprows=[0])
 
     df.columns = [
@@ -86,10 +110,13 @@ def load_employees():
 
         fecha_15 = calcular_fecha_proyectada_15_dias(pagadas, dias_sln)
 
+        # Si tu archivo de empleados trae 'area', podrías mapearlo aquí.
+        area = row["tipo"] if ("tipo" in df.columns and not pd.isna(row["tipo"])) else "General"
+
         empleados[nombre] = {
             "nombre": nombre,
             "codigo": codigo,
-            "area": "General",
+            "area": area,
             "dias_generados": round(dias_generados, 2),
             "dias_tomados": usados,
             "dias_disponibles": disponibles,
@@ -115,22 +142,30 @@ def save_requests(reqs):
         json.dump(reqs, f, indent=4, ensure_ascii=False)
 
 
-def calcular_fin(inicio, dias_disponibles):
+def calcular_fin(inicio, dias_habiles=15):
+    # Calcula la fecha final sumando dias_habiles días hábiles
     actuales = inicio
     cont = 0
 
-    while cont < dias_disponibles:
+    while cont < dias_habiles:
         actuales += timedelta(days=1)
 
+        # Excluir domingos
         if actuales.weekday() == 6:
             continue
 
+        # Excluir festivos
         if actuales in festivos:
             continue
 
         cont += 1
 
     return actuales
+
+
+def rango_solapa(inicio1, fin1, inicio2, fin2):
+    # todos date objects
+    return not (fin1 < inicio2 or fin2 < inicio1)
 
 
 # ------------------------------------------------------------------
@@ -165,13 +200,14 @@ def employee_request_form():
     employees = load_employees()
     requests = load_requests()
 
+    # Vincular solicitudes a empleados (para mostrar en la tabla)
     for r in requests:
         if r["nombre"] in employees:
             e = employees[r["nombre"]]
-            e["inicio_vacaciones"] = r["inicio"]
-            e["fin_vacaciones"] = r["fin"]
-            e["dias_solicitados_req"] = r["dias"]
-            e["estado"] = r["estado"]
+            e["inicio_vacaciones"] = iso_to_ddmmyyyy(r.get("inicio"))
+            e["fin_vacaciones"] = iso_to_ddmmyyyy(r.get("fin"))
+            e["dias_solicitados_req"] = r.get("dias", 0)
+            e["estado"] = r.get("estado", "Sin solicitud")
 
     msg = request.args.get("message")
 
@@ -201,35 +237,86 @@ def admin_view():
 
 
 # ------------------------------------------------------------------
+# ENDPOINT EVENTS (FullCalendar)
+# ------------------------------------------------------------------
+
+@app.route("/events")
+def events():
+    # Devuelve eventos en formato que FullCalendar espera.
+    reqs = load_requests()
+    events = []
+
+    for r in reqs:
+        estado = r.get('estado')
+
+        # Solo incluir aprobadas
+        if estado not in ["Approved", "Aprobado"]:
+            continue
+
+        events.append({
+            "title": f"{r.get('nombre')} (Aprobado)",
+            "start": r.get('inicio'),
+            "end": r.get('fin'),
+            "extendedProps": {
+                "nombre": r.get("nombre"),
+                "area": r.get("area"),
+                "estado": estado,
+                "dias": r.get("dias")
+            },
+            "color": "#10b981"  # verde
+        })
+
+    return jsonify(events)
+
+# ------------------------------------------------------------------
 # VALIDACIÓN FECHA
 # ------------------------------------------------------------------
 
 @app.route("/calcular_disponibilidad", methods=["POST"])
 def calcular_disponibilidad():
     nombre = request.form.get("nombre_solicitud")
-    inicio = request.form.get("inicio_fecha")
+    inicio_raw = request.form.get("inicio_fecha")
 
-    if not nombre or not inicio:
-        return {"permitido": False, "mensaje": "Datos incompletos"}
+    if not nombre or not inicio_raw:
+        return jsonify({"permitido": False, "mensaje": "Datos incompletos"})
 
-    inicio = date.fromisoformat(inicio)
+    # aceptar dd/mm/yyyy o yyyy-mm-dd
+    inicio = ddmmyyyy_to_date(inicio_raw) if "/" in inicio_raw else date.fromisoformat(inicio_raw)
 
-    empleados = load_employees()
-    empleado = empleados.get(nombre)
+    if inicio is None:
+        return jsonify({"permitido": False, "mensaje": "Fecha inválida"})
 
+    # Bloquear enero
+    if inicio.month == 1:
+        return jsonify({"permitido": False, "mensaje": "No se pueden solicitar vacaciones con inicio en enero."})
+
+    # Solo exactamente 15 días
+    dias_solicitados = 15
+
+    # Revisar solapamientos por área con solicitudes aprobadas
+    employees = load_employees()
+    empleado = employees.get(nombre)
     if not empleado:
-        return {"permitido": False, "mensaje": "Empleado no encontrado"}
+        return jsonify({"permitido": False, "mensaje": "Empleado no encontrado"})
 
-    dias_disponibles = int(empleado["dias_disponibles"])
+    area = empleado.get("area", "General")
+    fin = calcular_fin(inicio, dias_habiles=dias_solicitados)
+
+    reqs = load_requests()
+    for r in reqs:
+        if r.get("area") == area and (r.get("estado") in ("Approved", "Aprobado")):
+            # comparar rangos
+            r_inicio = date.fromisoformat(r.get("inicio"))
+            r_fin = date.fromisoformat(r.get("fin"))
+            if rango_solapa(inicio, fin, r_inicio, r_fin):
+                return jsonify({"permitido": False, "mensaje": f"Ya existe una persona del área {area} de vacaciones en ese periodo."})
+
+    # También validar fecha_15 (tu regla previa)
     fecha_15 = empleado["fecha_15_dias"]
+    if empleado["dias_disponibles"] < 15 and inicio < fecha_15:
+        return jsonify({"permitido": False, "mensaje": f"Solo puedes solicitar vacaciones a partir del {fecha_15.strftime('%d/%m/%Y')}."})
 
-    if dias_disponibles < 15 and inicio < fecha_15:
-        return {
-            "permitido": False,
-            "mensaje": f"Solo puedes solicitar vacaciones a partir del {fecha_15}."
-        }
-
-    return {"permitido": True, "mensaje": "Solicitud válida"}
+    return jsonify({"permitido": True, "mensaje": "Solicitud válida", "dias": dias_solicitados, "fin": fin.isoformat()})
 
 
 # ------------------------------------------------------------------
@@ -239,32 +326,40 @@ def calcular_disponibilidad():
 @app.route("/submit", methods=["POST"])
 def submit_request():
     nombre = request.form["nombre_solicitud"]
-    inicio = date.fromisoformat(request.form["inicio_fecha"])
+    # aceptar dd/mm/yyyy o yyyy-mm-dd
+    inicio_field = request.form["inicio_fecha"]
+    inicio = ddmmyyyy_to_date(inicio_field) if "/" in inicio_field else date.fromisoformat(inicio_field)
 
-    empleados = load_employees()
-    empleado = empleados.get(nombre)
+    employees = load_employees()
+    empleado = employees.get(nombre)
 
     if not empleado:
-        return "Empleado no encontrado", 400
+        return redirect(url_for("employee_request_form", message="Empleado no encontrado"))
 
-    dias_disponibles = int(empleado["dias_disponibles"])
-    fecha_15 = empleado["fecha_15_dias"]
+    # check january
+    if inicio.month == 1:
+        return redirect(url_for("employee_request_form", message="No se pueden solicitar vacaciones con inicio en enero."))
 
-    if dias_disponibles < 15 and inicio < fecha_15:
-        return redirect(url_for(
-            "employee_request_form",
-            message=f"Solo puedes solicitar vacaciones a partir del {fecha_15}."
-        ))
+    dias_solicitados = 15
+    fin = calcular_fin(inicio, dias_habiles=dias_solicitados)
 
-    fin = calcular_fin(inicio, dias_disponibles)
-
+    # verificar solapamiento por area contra aprobadas
+    area = empleado.get("area", "General")
     reqs = load_requests()
+    for r in reqs:
+        if r.get("area") == area and (r.get("estado") in ("Approved", "Aprobado")):
+            r_inicio = date.fromisoformat(r.get("inicio"))
+            r_fin = date.fromisoformat(r.get("fin"))
+            if rango_solapa(inicio, fin, r_inicio, r_fin):
+                return redirect(url_for("employee_request_form", message=f"Error: otra persona del área {area} ya tiene vacaciones en ese periodo."))
+
+    # Guardar solicitud con ISO dates, dias = 15
     reqs.append({
         "nombre": nombre,
-        "area": "General",
-        "dias": dias_disponibles,
-        "inicio": str(inicio),
-        "fin": str(fin),
+        "area": area,
+        "dias": dias_solicitados,
+        "inicio": inicio.isoformat(),
+        "fin": fin.isoformat(),
         "estado": "Pending",
         "solicitado_en": datetime.now().isoformat()
     })
@@ -275,7 +370,7 @@ def submit_request():
 
 
 # ------------------------------------------------------------------
-# ADMIN → APROBAR / RECHAZAR
+# ADMIN → APROBAR / RECHAZAR (AJAX-friendly)
 # ------------------------------------------------------------------
 
 @app.route("/action", methods=["POST"])
@@ -284,15 +379,40 @@ def action_request():
     inicio = request.form["inicio"]
     action = request.form["action"]
 
+    # recibir inicio como ISO
     reqs = load_requests()
-
+    target = None
     for r in reqs:
         if r["nombre"] == nombre and r["inicio"] == inicio:
-            r["estado"] = "Approved" if action == "Aprobado" else "Rejected"
+            target = r
+            break
+
+    if not target:
+        return jsonify({"success": False, "mensaje": "Solicitud no encontrada."})
+
+    # Si se quiere aprobar: verificar solapamientos por área con otras aprobadas
+    if action == "Aprobado":
+        area = target.get("area", "General")
+        inicio_dt = date.fromisoformat(target.get("inicio"))
+        fin_dt = date.fromisoformat(target.get("fin"))
+
+        for r in reqs:
+            if r is target:
+                continue
+            if r.get("area") == area and (r.get("estado") in ("Approved", "Aprobado")):
+                r_inicio = date.fromisoformat(r.get("inicio"))
+                r_fin = date.fromisoformat(r.get("fin"))
+                if rango_solapa(inicio_dt, fin_dt, r_inicio, r_fin):
+                    return jsonify({"success": False, "mensaje": f"No se puede aprobar: solapa con {r.get('nombre')} del área {area}."})
+
+        target["estado"] = "Approved"
+    else:
+        # Denegado
+        target["estado"] = "Rejected" if action == "Denegado" else action
 
     save_requests(reqs)
 
-    return redirect(url_for("admin_view"))
+    return jsonify({"success": True, "mensaje": f"Solicitud {action} correctamente."})
 
 
 # ------------------------------------------------------------------
@@ -302,7 +422,7 @@ def action_request():
 @app.route("/pdf")
 def descargar_pdf():
     reqs = load_requests()
-    aprobadas = [r for r in reqs if r["estado"] == "Approved"]
+    aprobadas = [r for r in reqs if r["estado"] in ("Approved", "Aprobado")]
 
     path = os.path.join(app.config["PDF_FOLDER"], "vacaciones_aprobadas.pdf")
 
@@ -314,8 +434,10 @@ def descargar_pdf():
     story.append(Spacer(1, 20))
 
     for r in aprobadas:
+        inicio_dd = iso_to_ddmmyyyy(r.get("inicio"))
+        fin_dd = iso_to_ddmmyyyy(r.get("fin"))
         story.append(Paragraph(
-            f"{r['nombre']} — {r['inicio']} a {r['fin']} — {r['dias']} días",
+            f"{r['nombre']} — {inicio_dd} a {fin_dd} — {r['dias']} días",
             styles["Normal"]
         ))
         story.append(Spacer(1, 10))
@@ -328,4 +450,4 @@ def descargar_pdf():
 # ------------------------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=True)
