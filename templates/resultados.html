@@ -153,14 +153,14 @@
                     <th>Acciones</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="admin-requests-body">
                 {% for r in data %}
-                <tr>
+                <tr data-nombre="{{ r.nombre }}" data-inicio="{{ r.inicio }}">
                     <td>{{ r.nombre }}</td>
                     <td>{{ r.area }}</td>
                     <td>{{ r.dias }}</td>
-                    <td>{{ r.inicio }}</td>
-                    <td>{{ r.fin }}</td>
+                    <td>{{ (r.inicio | default('')) and (r.inicio[:10] | replace('-', '/')) and (r.inicio[:10] | string) and (r.inicio and (r.inicio | safe) ) and (r.inicio and (r.inicio[:10] | string)) or r.inicio }}</td>
+                    <td>{{ (r.fin | default('')) }}</td>
                     <td>{{ r.solicitado_en.split('T')[0] if r.solicitado_en else 'N/A' }}</td>
                     <td>
                         <span class="status-{{ r.estado | replace(' ', '-') }}">
@@ -173,16 +173,8 @@
                     </td>
                     <td>
                         {% if r.estado == 'Pending' %}
-                            <form action="{{ url_for('action_request') }}" method="POST" style="display:inline;">
-                                <input type="hidden" name="nombre" value="{{ r.nombre }}">
-                                <input type="hidden" name="inicio" value="{{ r.inicio }}">
-                                <button type="submit" name="action" value="Aprobado" class="btn btn-primary btn-sm">Aprobar</button>
-                            </form>
-                            <form action="{{ url_for('action_request') }}" method="POST" style="display:inline;">
-                                <input type="hidden" name="nombre" value="{{ r.nombre }}">
-                                <input type="hidden" name="inicio" value="{{ r.inicio }}">
-                                <button type="submit" name="action" value="Denegado" class="btn btn-danger btn-sm">Denegar</button>
-                            </form>
+                            <button class="btn btn-primary btn-sm action-btn" data-action="Aprobado" data-nombre="{{ r.nombre }}" data-inicio="{{ r.inicio }}">Aprobar</button>
+                            <button class="btn btn-danger btn-sm action-btn" data-action="Denegado" data-nombre="{{ r.nombre }}" data-inicio="{{ r.inicio }}">Denegar</button>
                         {% else %}
                             N/A
                         {% endif %}
@@ -207,7 +199,9 @@
             <input type="hidden" name="nombre_solicitud" id="nombre_solicitud_input">
 
             <label class="form-label">Fecha de Inicio:</label>
-            <input type="date" name="inicio_fecha" class="form-control mb-3" required>
+            <input type="date" name="inicio_fecha" id="inicio_fecha_input" class="form-control mb-3" required>
+
+            <div class="mb-2 text-muted">Nota: las solicitudes tienen una duración fija de 15 días hábiles. No se permiten inicios en enero.</div>
 
             <button type="submit" class="btn btn-success w-100">Enviar Solicitud</button>
             <button type="button" class="btn btn-secondary w-100 mt-2" onclick="closeRequestModal()">Cancelar</button>
@@ -218,6 +212,8 @@
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js'></script>
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/es.js'></script>
 <script>
+
+let calendar; // global para poder refrescarlo desde AJAX
 
 function openRequestModal(nombre) {
     document.getElementById('nombre_solicitud_input').value = nombre;
@@ -231,7 +227,7 @@ function closeRequestModal() {
 document.addEventListener('DOMContentLoaded', function() {
     var calendarEl = document.getElementById('calendar');
 
-    var calendar = new FullCalendar.Calendar(calendarEl, {
+    calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         locale: 'es',
         height: "auto",
@@ -240,12 +236,19 @@ document.addEventListener('DOMContentLoaded', function() {
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,listWeek'
         },
-        events: {{ eventos|safe }}
+        events: '/events', // ahora solicita dinámicamente
+        eventTimeFormat: { // mostrar solo fecha
+            year: 'numeric', month: '2-digit', day: '2-digit'
+        },
+        eventDidMount: function(info) {
+            // formatear título si quieres algo más
+        }
     });
 
     calendar.render();
 });
 </script>
+
 <script>
 document.addEventListener("DOMContentLoaded", function () {
     const searchInput = document.getElementById("searchInput");
@@ -298,6 +301,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 });
 </script>
+
 <script>
 document.getElementById("vacacionesForm").addEventListener("submit", function(event) {
     event.preventDefault(); // Evita envío automático
@@ -311,14 +315,12 @@ document.getElementById("vacacionesForm").addEventListener("submit", function(ev
     .then(response => response.json())
     .then(data => {
 
-        console.log("Respuesta:", data); // Para ver qué llega
-
         if (!data.permitido) {
-            alert(data.mensaje);  // 
-            return;              // 
+            alert(data.mensaje);
+            return;
         }
 
-        // Si está permitido → enviar
+        // Si está permitido → enviar form (post tradicional para simplificar)
         this.submit();
     })
     .catch(err => {
@@ -328,6 +330,43 @@ document.getElementById("vacacionesForm").addEventListener("submit", function(ev
 });
 </script>
 
+<script>
+// Manejar acciones en admin por AJAX y refrescar el calendario
+document.addEventListener("click", function(e) {
+    if (e.target && e.target.classList.contains("action-btn")) {
+        const nombre = e.target.getAttribute("data-nombre");
+        const inicio = e.target.getAttribute("data-inicio");
+        const action = e.target.getAttribute("data-action");
+
+        if (!confirm(`Confirmar acción "${action}" para ${nombre} (inicio: ${inicio}) ?`)) return;
+
+        const formData = new FormData();
+        formData.append("nombre", nombre);
+        formData.append("inicio", inicio);
+        formData.append("action", action);
+
+        fetch("/action", {
+            method: "POST",
+            body: formData
+        })
+        .then(r => r.json())
+        .then(resp => {
+            if (!resp.success) {
+                alert("Error: " + resp.mensaje);
+                return;
+            }
+            // Refrescar lista (recargar la página o actualizar el DOM)
+            location.reload(); // simple y efectivo
+            // Alternativa: actualizar tabla y no recargar, y luego:
+            // calendar.refetchEvents();
+        })
+        .catch(err => {
+            console.error(err);
+            alert("Error al procesar la acción.");
+        });
+    }
+});
+</script>
 
 </body>
 </html>
