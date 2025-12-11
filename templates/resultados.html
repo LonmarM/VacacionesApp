@@ -3,62 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>{% if is_admin %}Panel de Administración{% else %}Solicitud de Vacaciones{% endif %} | Gestión Corporativa</title>
 
+    <!-- FullCalendar -->
     <link href='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css' rel='stylesheet' />
+
+    <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
     <style>
         body {
             font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            margin: 0;
             background: #f5f5f5;
+            margin: 0;
         }
 
         header {
             background: #1f2937;
             color: white;
             padding: 20px;
-            font-size: 28px;
+            font-size: 26px;
             font-weight: bold;
             text-align: center;
         }
 
         .container {
             max-width: 1200px;
-            margin: 40px auto;
+            margin: 20px auto;
             background: white;
-            padding: 30px;
+            padding: 20px;
             border-radius: 12px;
             box-shadow: 0 4px 18px rgba(0,0,0,0.15);
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 40px;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
+        /* TABLAS RESPONSIVE */
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         th {
-            background-color: #f3f4f6;
-            color: #1f2937;
-            font-weight: 600;
             text-transform: uppercase;
             font-size: 12px;
+            background: #f3f4f6;
+            font-weight: 600;
         }
-        
+
         .status-Pending { background-color: #fef3c7; color: #a16207; padding: 4px; border-radius: 4px; font-weight: bold;}
-        .status-Approved { background-color: #d1fae5; color: #065f46; padding: 4px; border-radius: 4px; font-weight: bold;}
-        .status-Rejected { background-color: #fee2e2; color: #991b1b; padding: 4px; border-radius: 4px; font-weight: bold;}
+        .status-Approved, .status-Aprobado { background-color: #d1fae5; color: #065f46; padding: 4px; border-radius: 4px; font-weight: bold;}
+        .status-Rejected, .status-Denegado { background-color: #fee2e2; color: #991b1b; padding: 4px; border-radius: 4px; font-weight: bold;}
         .status-NA, .status-Sin { background-color: #e5e7eb; color: #374151; padding: 4px; border-radius: 4px; font-weight: bold;}
+
+        /* FULLCALENDAR RESPONSIVE */
+        @media (max-width: 768px) {
+            .fc-toolbar {
+                flex-direction: column !important;
+                gap: 8px;
+            }
+            .fc-toolbar-chunk {
+                width: 100%;
+                justify-content: center !important;
+            }
+            #calendar {
+                margin-top: 20px;
+            }
+        }
+
+        /* MODAL RESPONSIVE */
+        #requestModal > div {
+            width: 90%;
+            max-width: 400px;
+            margin: 100px auto;
+        }
+
     </style>
 </head>
+
 <body>
 
 <header>
@@ -66,9 +87,11 @@
 </header>
 
 <div class="container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>{% if is_admin %}Panel de Aprobación{% else %}Solicitud de Empleados{% endif %}</h2>
-        <div class="actions">
+
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-3">
+        <h2 class="m-0">{% if is_admin %}Panel de Aprobación{% else %}Solicitud de Empleados{% endif %}</h2>
+        
+        <div class="actions d-flex gap-2">
             {% if is_admin %}
                 <a href="{{ url_for('employee_request_form') }}" class="btn btn-secondary">Vista de Solicitud</a>
                 <a href="{{ url_for('descargar_pdf') }}" class="btn btn-primary">Descargar Aprobadas (PDF)</a>
@@ -79,22 +102,24 @@
     </div>
 
     {% if message %}
-        <div class="alert alert-info" role="alert">{{ message }}</div>
+    <div class="alert alert-info">{{ message }}</div>
     {% endif %}
-    
 
     {% if results_type == 'request' %}
-        
-        <h3>Resumen de Empleados y Última Solicitud</h3>
-        <div class="mb-3 position-relative" style="max-width: 350px;">
+    <h3>Resumen de Empleados y Última Solicitud</h3>
+
+    <!-- BUSCADOR -->
+    <div class="mb-3 position-relative" style="max-width: 350px;">
         <input type="text" id="searchInput" class="form-control" placeholder="Buscar empleado...">
-        <div id="suggestions" 
-            style="position:absolute; top:100%; left:0; width:100%; background:white; 
-                    border:1px solid #ccc; border-top:none; z-index:10; display:none;
-                    max-height:200px; overflow-y:auto;">
-            </div>
+        <div id="suggestions"
+            style="position:absolute; top:100%; left:0; width:100%; background:white;
+                   border:1px solid #ccc; border-top:none; z-index:10; display:none;
+                   max-height:200px; overflow-y:auto;">
         </div>
-        <table>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover">
             <thead>
                 <tr>
                     <th>Empleado</th>
@@ -121,31 +146,31 @@
                     <td>
                         <span class="status-{{ r.estado | replace(' ', '-') }}">
                             {% if r.estado == "Pending" %}Pendiente
-                            {% elif r.estado == "Approved" or r.estado == "Aprobado" %}Aprobada
-                            {% elif r.estado == "Rejected" or r.estado == "Denegado" %}Denegada
-                            {% else %}N/A
-                            {% endif %}
+                            {% elif r.estado in ["Approved", "Aprobado"] %}Aprobada
+                            {% elif r.estado in ["Rejected", "Denegado"] %}Denegada
+                            {% else %}N/A{% endif %}
                         </span>
                     </td>
-
                     <td>
-                        <button class="btn btn-success btn-sm" onclick="openRequestModal('{{ r.nombre }}')">
-                            Solicitar
-                        </button>
+                        <button class="btn btn-success btn-sm" onclick="openRequestModal('{{ r.nombre }}')">Solicitar</button>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+    </div>
 
     {% elif results_type == 'admin' %}
-        <h3>Lista de Solicitudes (Todas)</h3>
-        <table>
+
+    <h3>Lista de Solicitudes (Todas)</h3>
+
+    <div class="table-responsive">
+        <table class="table table-hover">
             <thead>
                 <tr>
                     <th>Empleado</th>
                     <th>Área</th>
-                    <th>Días Solicitados</th>
+                    <th>Días</th>
                     <th>Inicio</th>
                     <th>Fin</th>
                     <th>Fecha Solicitud</th>
@@ -159,61 +184,65 @@
                     <td>{{ r.nombre }}</td>
                     <td>{{ r.area }}</td>
                     <td>{{ r.dias }}</td>
-                    <td>{{ (r.inicio | default('')) and (r.inicio[:10] | replace('-', '/')) and (r.inicio[:10] | string) and (r.inicio and (r.inicio | safe) ) and (r.inicio and (r.inicio[:10] | string)) or r.inicio }}</td>
-                    <td>{{ (r.fin | default('')) }}</td>
+                    <td>{{ r.inicio[:10] if r.inicio else '' }}</td>
+                    <td>{{ r.fin }}</td>
                     <td>{{ r.solicitado_en.split('T')[0] if r.solicitado_en else 'N/A' }}</td>
                     <td>
                         <span class="status-{{ r.estado | replace(' ', '-') }}">
                             {% if r.estado == "Pending" %}Pendiente
-                            {% elif r.estado == "Approved" or r.estado == "Aprobado" %}Aprobada
-                            {% elif r.estado == "Rejected" or r.estado == "Denegado" %}Denegada
-                            {% else %}N/A
-                            {% endif %}
+                            {% elif r.estado in ["Approved", "Aprobado"] %}Aprobada
+                            {% elif r.estado in ["Rejected", "Denegado"] %}Denegada
+                            {% else %}N/A{% endif %}
                         </span>
                     </td>
                     <td>
                         {% if r.estado == 'Pending' %}
-                            <button class="btn btn-primary btn-sm action-btn" data-action="Aprobado" data-nombre="{{ r.nombre }}" data-inicio="{{ r.inicio }}">Aprobar</button>
-                            <button class="btn btn-danger btn-sm action-btn" data-action="Denegado" data-nombre="{{ r.nombre }}" data-inicio="{{ r.inicio }}">Denegar</button>
-                        {% else %}
-                            N/A
-                        {% endif %}
+                            <button class="btn btn-primary btn-sm action-btn" 
+                                data-action="Aprobado" data-nombre="{{ r.nombre }}" data-inicio="{{ r.inicio }}">Aprobar</button>
+                            <button class="btn btn-danger btn-sm action-btn" 
+                                data-action="Denegado" data-nombre="{{ r.nombre }}" data-inicio="{{ r.inicio }}">Denegar</button>
+                        {% else %}N/A{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+
     {% endif %}
 
-    <h2 class="mt-5">Calendario de Vacaciones</h2>
+    <h2 class="mt-4">Calendario de Vacaciones</h2>
     <div id="calendar"></div>
 
 </div>
 
-<!-- MODAL SIMPLIFICADO (SOLO FECHA INICIO) -->
-<div id="requestModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-    <div style="background:white; width:400px; margin:100px auto; padding:20px; border-radius:8px;">
+<!-- MODAL -->
+<div id="requestModal"
+    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+           background:rgba(0,0,0,0.5); z-index:1000;">
+    <div style="background:white; padding:20px; border-radius:8px;">
         <h3>Solicitar Vacaciones</h3>
-        
+
         <form id="vacacionesForm" action="/submit" method="POST">
             <input type="hidden" name="nombre_solicitud" id="nombre_solicitud_input">
 
             <label class="form-label">Fecha de Inicio:</label>
             <input type="date" name="inicio_fecha" id="inicio_fecha_input" class="form-control mb-3" required>
 
-            <div class="mb-2 text-muted">Nota: las solicitudes tienen una duración fija de 15 días hábiles. No se permiten inicios en enero.</div>
+            <div class="mb-2 text-muted">Duración fija: 15 días hábiles. Enero no permitido.</div>
 
-            <button type="submit" class="btn btn-success w-100">Enviar Solicitud</button>
+            <button class="btn btn-success w-100">Enviar Solicitud</button>
             <button type="button" class="btn btn-secondary w-100 mt-2" onclick="closeRequestModal()">Cancelar</button>
         </form>
     </div>
 </div>
 
+<!-- SCRIPTS -->
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js'></script>
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/es.js'></script>
-<script>
 
-let calendar; // global para poder refrescarlo desde AJAX
+<script>
+let calendar;
 
 function openRequestModal(nombre) {
     document.getElementById('nombre_solicitud_input').value = nombre;
@@ -225,36 +254,37 @@ function closeRequestModal() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    var calendarEl = document.getElementById('calendar');
+    let calendarEl = document.getElementById('calendar');
+    let isMobile = window.innerWidth < 768;
 
     calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
-        locale: 'es',
+        initialView: isMobile ? "listWeek" : "dayGridMonth",
+        locale: "es",
         height: "auto",
         headerToolbar: {
-            left: 'prev,next today',
-            center: 'title',
-            right: 'dayGridMonth,timeGridWeek,listWeek'
+            left: "prev,next today",
+            center: "title",
+            right: "dayGridMonth,listWeek"
         },
-        events: '/events', // ahora solicita dinámicamente
-        eventTimeFormat: { // mostrar solo fecha
-            year: 'numeric', month: '2-digit', day: '2-digit'
-        },
-        eventDidMount: function(info) {
-            // formatear título si quieres algo más
-        }
+        events: "/events",
     });
 
     calendar.render();
+
+    window.addEventListener("resize", () => {
+        let mobile = window.innerWidth < 768;
+        calendar.changeView(mobile ? "listWeek" : "dayGridMonth");
+    });
 });
 </script>
 
 <script>
+/* BUSCADOR + AUTO SUGERENCIAS */
 document.addEventListener("DOMContentLoaded", function () {
     const searchInput = document.getElementById("searchInput");
     const suggestionsBox = document.getElementById("suggestions");
+    if (!searchInput) return;
 
-    // Capturar lista de nombres desde la tabla
     let empleados = Array.from(document.querySelectorAll("tbody tr td:first-child"))
                          .map(td => td.textContent.trim());
 
@@ -268,13 +298,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function mostrarSugerencias(texto) {
         let filtradas = empleados.filter(e => e.toLowerCase().includes(texto.toLowerCase()));
-        if (filtradas.length === 0 || texto.trim() === "") {
+
+        if (!texto || filtradas.length === 0) {
             suggestionsBox.style.display = "none";
             return;
         }
 
         suggestionsBox.innerHTML = filtradas
-            .map(e => `<div class="p-2 suggestion-item" style="cursor:pointer;">${e}</div>`)
+            .map(e => `<div class="p-2 border-bottom bg-white suggestion-item" style="cursor:pointer;">${e}</div>`)
             .join("");
 
         suggestionsBox.style.display = "block";
@@ -289,9 +320,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     searchInput.addEventListener("input", function () {
-        let texto = this.value;
-        mostrarSugerencias(texto);
-        filtrarTabla(texto);
+        mostrarSugerencias(this.value);
+        filtrarTabla(this.value);
     });
 
     document.addEventListener("click", function (e) {
@@ -303,42 +333,16 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 
 <script>
-document.getElementById("vacacionesForm").addEventListener("submit", function(event) {
-    event.preventDefault(); // Evita envío automático
-
-    const formData = new FormData(this);
-
-    fetch("/calcular_disponibilidad", {
-        method: "POST",
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-
-        if (!data.permitido) {
-            alert(data.mensaje);
-            return;
-        }
-
-        // Si está permitido → enviar form (post tradicional para simplificar)
-        this.submit();
-    })
-    .catch(err => {
-        console.error(err);
-        alert("Error al validar la solicitud.");
-    });
-});
-</script>
-
-<script>
-// Manejar acciones en admin por AJAX y refrescar el calendario
+/* ACCIONES ADMIN (APROBAR / DENEGAR) */
 document.addEventListener("click", function(e) {
     if (e.target && e.target.classList.contains("action-btn")) {
-        const nombre = e.target.getAttribute("data-nombre");
-        const inicio = e.target.getAttribute("data-inicio");
-        const action = e.target.getAttribute("data-action");
 
-        if (!confirm(`Confirmar acción "${action}" para ${nombre} (inicio: ${inicio}) ?`)) return;
+        const nombre = e.target.dataset.nombre;
+        const inicio = e.target.dataset.inicio;
+        const action = e.target.dataset.action;
+
+        if (!confirm(`Confirmar acción "${action}" para ${nombre} (inicio: ${inicio}) ?`))
+            return;
 
         const formData = new FormData();
         formData.append("nombre", nombre);
@@ -355,16 +359,34 @@ document.addEventListener("click", function(e) {
                 alert("Error: " + resp.mensaje);
                 return;
             }
-            // Refrescar lista (recargar la página o actualizar el DOM)
-            location.reload(); // simple y efectivo
-            // Alternativa: actualizar tabla y no recargar, y luego:
-            // calendar.refetchEvents();
+            location.reload();  // refresca lista y calendario
         })
         .catch(err => {
-            console.error(err);
             alert("Error al procesar la acción.");
         });
     }
+});
+</script>
+
+<script>
+/* VALIDACIÓN AJAX ANTES DE ENVIAR FORMULARIO */
+document.getElementById("vacacionesForm")?.addEventListener("submit", function(event) {
+    event.preventDefault();
+
+    const formData = new FormData(this);
+
+    fetch("/calcular_disponibilidad", {
+        method: "POST",
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.permitido) {
+            alert(data.mensaje);
+            return;
+        }
+        this.submit();
+    });
 });
 </script>
 
