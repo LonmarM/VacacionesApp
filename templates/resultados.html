@@ -341,32 +341,48 @@ document.addEventListener("click", function(e) {
         const inicio = e.target.dataset.inicio;
         const action = e.target.dataset.action;
 
-        if (!confirm(`Confirmar acción "${action}" para ${nombre} (inicio: ${inicio}) ?`))
-            return;
-
-        const formData = new FormData();
-        formData.append("nombre", nombre);
-        formData.append("inicio", inicio);
-        formData.append("action", action);
-
-        fetch("/action", {
-            method: "POST",
-            body: formData
-        })
-        .then(r => r.json())
-        .then(resp => {
-            if (!resp.success) {
-                alert("Error: " + resp.mensaje);
-                return;
-            }
-            location.reload();  // refresca lista y calendario
-        })
-        .catch(err => {
-            alert("Error al procesar la acción.");
-        });
+        // Primer intento: sin force
+        enviarAccion(nombre, inicio, action, false);
     }
 });
+
+/* ---- FUNCIÓN CENTRAL ---- */
+function enviarAccion(nombre, inicio, action, force) {
+    const formData = new FormData();
+    formData.append("nombre", nombre);
+    formData.append("inicio", inicio);
+    formData.append("action", action);
+    if (force) formData.append("force", "1");  // <-- fuerza aprobación si viene de warning
+
+    fetch("/action", {
+        method: "POST",
+        body: formData
+    })
+    .then(r => r.json())
+    .then(resp => {
+
+        /* Si backend envía WARNING de solapamiento */
+        if (resp.warning) {
+            if (confirm(resp.mensaje + "\n\n¿Deseas aprobar de todos modos?")) {
+                enviarAccion(nombre, inicio, action, true); // <-- segundo intento con force
+            }
+            return;
+        }
+
+        /* Respuesta normal */
+        if (!resp.success) {
+            alert("Error: " + resp.mensaje);
+            return;
+        }
+
+        location.reload();  // refresca lista y calendario
+    })
+    .catch(err => {
+        alert("Error al procesar la acción.");
+    });
+}
 </script>
+
 
 <script>
 /* VALIDACIÓN AJAX ANTES DE ENVIAR FORMULARIO */
