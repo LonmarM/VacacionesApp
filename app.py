@@ -19,6 +19,7 @@ os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(app.config["PDF_FOLDER"], exist_ok=True)
 
 # Archivos
+ASESORES_FILE = os.path.join(app.config["UPLOAD_FOLDER"], "ASESORES.xlsx")
 EMPLOYEE_FILE = os.path.join(app.config["UPLOAD_FOLDER"], "LibroVacaciones.xlsx")
 REQUEST_FILE = os.path.join(app.config["UPLOAD_FOLDER"], "requests.json")
 
@@ -110,7 +111,7 @@ def load_employees():
         "codigo", "empleado", "fecha_ingreso", "dias_trabajados",
         "dias_sln", "dias_neto", "dias_derecho", "dias_otorgados",
         "dias_pendientes", "pagadas_hasta", "dias_vacaciones",
-        "tipo", "periodo", "valor_pagado", "fecha_inicial", "fecha_final"
+        "tipo", "periodo", "valor_pagado", "fecha_inicial", "fecha_final","area"
     ]
 
     today = date.today()
@@ -139,7 +140,7 @@ def load_employees():
 
         fecha_15 = calcular_fecha_proyectada_15_dias(pagadas, dias_sln) if pagadas else today
 
-        area = row["tipo"] if ("tipo" in df.columns and not pd.isna(row["tipo"])) else "General"
+        area = row["area"] if ("area" in df.columns and not pd.isna(row["area"])) else "General"
 
         empleados[nombre] = {
             "nombre": nombre,
